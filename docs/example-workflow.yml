@@ -1,0 +1,25 @@
+# Copy this file to .github/workflows/soc2-audit.yml in your repo
+#
+# Required setup:
+#   1. Add OPPER_API_KEY to your repo secrets (Settings > Secrets and variables > Actions)
+#   2. Ensure GITHUB_TOKEN has read access to the repos you want to audit
+#
+name: SOC2 Compliance Audit
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"  # Every Monday at 07:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: opper-ai/opper-soc2-audit-action@main
+        with:
+          opper-api-key: ${{ secrets.OPPER_API_KEY }}
+          # repos: "org/repo1,org/repo2"  # Optional: override which repos to audit

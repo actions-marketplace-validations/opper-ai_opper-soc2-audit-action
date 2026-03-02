@@ -1,0 +1,45 @@
+name: SOC2 Compliance Audit
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"  # Every Monday at 07:00 UTC
+  workflow_dispatch:
+    inputs:
+      additional_repos:
+        description: "Extra repos to audit (comma-separated, e.g. org/repo1,org/repo2)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Run SOC2 audit
+        id: audit
+        uses: ./
+        with:
+          repos: "${{ github.repository }}${{ inputs.additional_repos != '' && format(',{0}', inputs.additional_repos) || '' }}"
+          opper-api-key: ${{ secrets.OPPER_API_KEY }}

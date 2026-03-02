@@ -1,0 +1,21 @@
+{
+  "name": "opper-soc2-audit",
+  "version": "1.0.0",
+  "description": "SOC2 compliance checker agent for GitHub repositories",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "test": "tsx --test src/**/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opperai/agents": "^0.8.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "typescript": "^5.3.0",
+    "@types/node": "^20.0.0"
+  }
+}
