@@ -41,8 +41,6 @@ function ghRun(args: string[]): boolean {
 }
 
 function ensureLabel(owner: string, repo: string, label: string, color: string): void {
-  const exists = ghJson<{ name: string }[]>(["label", "list", "--repo", `${owner}/${repo}`, "--json", "name"]);
-  if (Array.isArray(exists) && exists.some((l) => l.name === label)) return;
   ghRun(["label", "create", label, "--repo", `${owner}/${repo}`, "--color", color, "--force"]);
 }
 
@@ -55,7 +53,7 @@ function findExistingIssue(owner: string, repo: string, title: string): number |
     "--state", "open",
     "--search", title,
     "--json", "number,title",
-    "--limit", "10",
+    "--limit", "50",
   ]);
   if (!issues) return null;
   const match = issues.find((i) => i.title === title);
@@ -64,7 +62,8 @@ function findExistingIssue(owner: string, repo: string, title: string): number |
 
 function commentOnIssue(owner: string, repo: string, issueNumber: number, finding: Finding): void {
   const body = `## Updated finding from latest SOC2 audit\n\n${issueBody(finding)}`;
-  ghRun(["issue", "comment", String(issueNumber), "--repo", `${owner}/${repo}`, "--body", body]);
+  const ok = ghRun(["issue", "comment", String(issueNumber), "--repo", `${owner}/${repo}`, "--body", body]);
+  if (!ok) console.warn(`  [issues] Failed to comment on issue #${issueNumber}`);
 }
 
 function createIssue(owner: string, repo: string, finding: Finding, controlRef: string): number | null {
@@ -92,27 +91,27 @@ function createIssue(owner: string, repo: string, finding: Finding, controlRef: 
   return match ? parseInt(match[1], 10) : null;
 }
 
-/** Create or update GitHub issues for critical/high findings. Returns map of finding index → issue number. */
+/** Create or update GitHub issues for critical/high findings. Returns map of finding title → issue number. */
 export async function createOrUpdateIssues(
   owner: string,
   repo: string,
   findings: Finding[],
   controlRef: string,
-): Promise<Map<number, number>> {
-  const issueMap = new Map<number, number>();
+): Promise<Map<string, number>> {
+  const issueMap = new Map<string, number>();
   const actionable = findings.filter((f) => f.severity === "critical" || f.severity === "high");
 
-  for (const [i, finding] of actionable.entries()) {
+  for (const finding of actionable) {
     const title = issueTitle(controlRef, finding.title);
     const existing = findExistingIssue(owner, repo, title);
     if (existing) {
       console.log(`  [issues] Commenting on existing issue #${existing}: ${finding.title}`);
       commentOnIssue(owner, repo, existing, finding);
-      issueMap.set(i, existing);
+      issueMap.set(finding.title, existing);
     } else {
       console.log(`  [issues] Creating issue: ${finding.title}`);
       const num = createIssue(owner, repo, finding, controlRef);
-      if (num) issueMap.set(i, num);
+      if (num) issueMap.set(finding.title, num);
     }
   }
   return issueMap;
