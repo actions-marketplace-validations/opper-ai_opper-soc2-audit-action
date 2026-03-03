@@ -5,7 +5,7 @@ import { slugify } from "./issues.ts";
 import { createFixAgent } from "./fix-agent.ts";
 
 export function branchName(issueNumber: number, findingTitle: string): string {
-  const slug = slugify(findingTitle).slice(0, 40).replace(/-+$/, "");
+  const slug = (slugify(findingTitle).slice(0, 40).replace(/-+$/, "")) || "finding";
   return `fix/soc2-${issueNumber}-${slug}`;
 }
 
@@ -23,9 +23,13 @@ function gh(args: string[]): { ok: boolean; stdout: string } {
   return { ok: !result.error && result.status === 0, stdout: (result.stdout ?? "").trim() };
 }
 
-function changedFiles(localPath: string): string[] {
-  const r = git(["diff", "--name-only"], localPath);
-  return r.stdout ? r.stdout.split("\n").filter(Boolean) : [];
+function changedFiles(localPath: string, baselineDirty?: Set<string>): string[] {
+  const r = git(["diff", "--name-only", "HEAD"], localPath);
+  const files = r.stdout ? r.stdout.split("\n").filter(Boolean) : [];
+  if (baselineDirty && baselineDirty.size > 0) {
+    return files.filter((f) => !baselineDirty.has(f));
+  }
+  return files;
 }
 
 export async function attemptFix(
@@ -42,6 +46,11 @@ export async function attemptFix(
   agent.registerHook(HookEvents.BeforeTool, ({ tool, input }: { tool: { name: string }; input?: unknown }) => {
     console.log(`  [fix/${issueNumber}] ${tool.name}`, JSON.stringify(input ?? {}).slice(0, 80));
   });
+
+  // Record pre-existing dirty files so we don't attribute them to the agent
+  const baselineDirty = new Set(
+    git(["diff", "--name-only", "HEAD"], localPath).stdout.split("\n").filter(Boolean)
+  );
 
   const prompt = `Fix this SOC2 finding in the repository ${owner}/${repo}:
 
@@ -66,7 +75,7 @@ Recommendation: ${finding.recommendation}`;
     return;
   }
 
-  const changed = changedFiles(localPath);
+  const changed = changedFiles(localPath, baselineDirty);
   if (changed.length === 0) {
     console.log(`  [fix] Agent said fixable but no files were changed`);
     return;
@@ -76,7 +85,9 @@ Recommendation: ${finding.recommendation}`;
   const baseBranch = git(["rev-parse", "--abbrev-ref", "HEAD"], localPath).stdout || "main";
 
   if (!git(["checkout", "-b", branch], localPath).ok) {
-    console.error(`  [fix] Failed to create branch ${branch}`);
+    console.error(`  [fix] Failed to create branch ${branch} (may already exist from a previous run)`);
+    git(["restore", "--staged", "."], localPath);
+    git(["restore", "."], localPath);
     return;
   }
 
@@ -93,7 +104,7 @@ Recommendation: ${finding.recommendation}`;
     ? `https://x-access-token:${token}@github.com/${owner}/${repo}`
     : `https://github.com/${owner}/${repo}`;
 
-  if (!git(["push", remote, branch], localPath).ok) {
+  if (!git(["push", "--force-with-lease", remote, branch], localPath).ok) {
     console.error(`  [fix] Failed to push branch ${branch}`);
     git(["checkout", baseBranch], localPath);
     return;
@@ -112,7 +123,13 @@ Recommendation: ${finding.recommendation}`;
   if (pr.ok) {
     console.log(`  [fix] PR created: ${pr.stdout}`);
   } else {
-    console.error(`  [fix] Failed to create PR`);
+    // gh pr create fails if PR already exists — check
+    const existing = gh(["pr", "view", "--repo", `${owner}/${repo}`, "--head", branch, "--json", "url"]);
+    if (existing.ok) {
+      console.log(`  [fix] PR already exists: ${JSON.parse(existing.stdout).url}`);
+    } else {
+      console.error(`  [fix] Failed to create PR`);
+    }
   }
 
   git(["checkout", baseBranch], localPath);
