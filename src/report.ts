@@ -5,7 +5,7 @@ import { computeStats } from "./stats.ts";
 const SEVERITY_ORDER: Severity[] = ["critical", "high", "medium", "low", "info"];
 
 function mdCell(s: string): string {
-  return s.replace(/\|/g, "\\|").replace(/\n|\r/g, " ");
+  return s.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n|\r/g, " ");
 }
 
 export function generateReport(repo: string, allFindings: AgentFindings[], stats?: AuditStats): string {
